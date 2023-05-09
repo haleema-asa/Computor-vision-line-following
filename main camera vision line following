@@ -1,0 +1,173 @@
+// Include files for required libraries
+#include <stdio.h>
+
+#include "opencv_aee.hpp"
+#include "main.hpp"     // You can use this file for declaring defined values and functions
+#include "pi2c.h"
+//#include<windows.h>
+
+
+Pi2c car(0x22); // Configure the I2C interface to the Car as a global variabl
+
+using namespace std;
+using namespace cv;
+int colour = 2;
+// black = 1, blue = 2, red = 3, yelloow = 4, green = 5, all colour exept white = 6
+float old_error, sum_error;
+float Kp = 1;
+float Ki = 0;
+float Kd =3;
+float u;
+float k = 0.6;
+void setup(void)
+{
+    setupCamera(320, 240);  // Enable the camera for OpenCV
+
+}
+
+int main( int argc, char** argv )
+{
+    setup();    // Call a setup function to prepare IO and devices
+
+    namedWindow("Photo");   // Create a GUI window called photo
+
+    while(1)    // Main loop to perform image processing
+    {
+        Mat frame;
+
+        while(frame.empty())
+            frame = captureFrame(); // Capture a frame from the camera and store in a new matrix variable
+
+            Mat hsvImg;
+          cvtColor(frame, hsvImg, COLOR_BGR2HSV);
+          Mat mask;
+              if (colour==1){
+                Scalar lower(38,0,0);
+                Scalar upper(91,106,62);
+                inRange(hsvImg, lower, upper, mask);}
+                else if (colour==2){
+                Scalar lower1(95, 0, 0);
+                Scalar upper1(109, 255, 255);
+                inRange(hsvImg, lower1, upper1, mask);}
+                else if (colour==3){
+                Scalar lower2(160, 0, 0);
+                Scalar upper2(179, 255, 255);
+                inRange(hsvImg, lower2, upper2, mask);}
+                else if (colour==4){
+                Scalar lower3(4, 100, 10);
+                Scalar upper3(34, 230, 230);
+                inRange(hsvImg, lower3, upper3, mask);}
+                else if (colour==5){
+                Scalar lower4(52, 95, 30);
+                Scalar upper4(83, 255, 131);
+                inRange(hsvImg, lower4, upper4, mask);}
+                else if (colour==6){
+                Scalar lower5(0, 33,0);
+                Scalar upper5(179, 255, 255);
+                inRange(hsvImg, lower5, upper5, mask);}
+                else {return 0;}
+                        // Detect edges using Canny algorithm
+                                // Preprocessing - Convert to grayscale and blur image
+        Mat gray;
+        cvtColor(frame, gray, COLOR_BGR2GRAY);
+        GaussianBlur(gray, gray, Size(5, 5), 0);
+
+        Mat edges;
+        //Canny(gray, edges, 50, 150, 3);
+
+        // Find contours
+        vector<vector<Point>> contours;
+        findContours(mask, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
+
+        // Find the largest contour
+        int largestContourIndex = -1;
+        double largestContourArea = 0;
+
+        for (size_t i = 0; i < contours.size(); i++)
+        {
+            double area = contourArea(contours[i]);
+            if (area > largestContourArea)
+            {
+                largestContourIndex = i;
+                largestContourArea = area;
+            }
+        }
+
+        // Draw the largest contour
+        if (largestContourIndex >= 0)
+        {
+            drawContours(frame, contours, largestContourIndex, Scalar(0, 255, 0), 2);
+        }
+         // Show the resulting image
+        imshow("Camera", frame);
+
+        if (waitKey(1) == 27) // Press 'Esc' to exit
+        {
+            break;
+        }
+
+        // Apply color thresholding to HSV image
+        imshow("Photo", mask);
+        //int bluePixels=0;
+
+       //bluePixels = countNonZero (mak) ;
+       // std::cout <<"Blue Pixels =" << bluePixels << std::endl;
+       //Point findContourCentre(std::vector<cv::Point> contour);
+
+    // Calculate the centroid of the contours
+    //cv::Moments moments = cv::moments(contours[largestContourIndex]);
+   // double cx = moments.m10 / moments.m00;
+   // double cy = moments.m01 / moments.m00;
+float error;
+    if (largestContourIndex >= 0){
+    cv::Moments moments = cv::moments(contours[largestContourIndex]);
+        double cx = moments.m10 / moments.m00;
+        double cy = moments.m01 / moments.m00;
+
+        // Print the centroid coordinates
+       std::cout << "Centroid X: " << cx << ", Y: " << cy << std::endl;
+
+    error = 183 - cx;
+    printf("error = %f\n", error);
+     }
+     else {
+     printf("no contour found");
+     }
+//delay(300);
+sleep(0.01);
+old_error = error;
+  sum_error += error; // sum_error = sum_error + error
+  u = (Kp * error) + (Ki * sum_error) + (Kd * (error - old_error));
+  printf("u = %f", u);
+
+    Pi2c arduino(7); //Create a new object "arduino" using address "0x07"
+    char receive[16]; //Create a buffer of char (single bytes) for the data
+
+    //Receive from the Arduino and put the contents into the "receive" char array
+    arduino.i2cRead(receive,16);
+     //Print out what the Arduino is sending...
+    std::cout << "Arduino Says: " << receive << std::endl;
+
+    //Send an 16 bit integer
+    arduino.i2cWriteArduinoInt(u);
+
+
+    // Print the centroid coordinates
+    //std::cout << "Centroid X: " << cx << ", Y: " << cy << std::endl;
+
+
+    int key = cv::waitKey(1);   // Wait 1ms for a keypress (required to update windows)
+
+        key = (key==255) ? -1 : key;    // Check if the ESC key has been pressed
+        if (key == 27)
+            break;
+
+	}
+
+	closeCV();  // Disable the camera and close any windows
+    //cap.release(); // Release the camera
+    destroyAllWindows(); // Close all windows
+	return 0;
+}
+
+
